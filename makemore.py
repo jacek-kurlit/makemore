@@ -1,4 +1,9 @@
+from typing import Tuple
 import torch
+
+# this is special token for start and end sequence
+SEQUENCE_TOKEN = "."
+
 
 # this does not work in terminal...
 def print_biagram(N, itos):
@@ -14,6 +19,12 @@ def print_biagram(N, itos):
     plt.axis("off")
 
 
+# this is just rust equivalent of window of 2: emma -> .e, em, mm, ma, a.
+def as_word_window(word):
+    chs = [SEQUENCE_TOKEN] + list(word) + [SEQUENCE_TOKEN]
+    return zip(chs, chs[1:])
+
+
 def measure_learning_efficiency(words, P, stoi):
     print("measuring learning efficiency")
     # log makes good loss function
@@ -22,8 +33,7 @@ def measure_learning_efficiency(words, P, stoi):
     log_likelihood = 0.0
     n = 0
     for w in words:
-        chs = ["."] + list(w) + ["."]
-        for ch1, ch2 in zip(chs, chs[1:]):
+        for ch1, ch2 in as_word_window(w):
             ix1 = stoi[ch1]
             ix2 = stoi[ch2]
             prob = P[ix1, ix2]
@@ -42,14 +52,7 @@ def measure_learning_efficiency(words, P, stoi):
 
 # this is not NN yet but some basic statistic "model"
 # it teaches what is going on pure probability ground
-def biagram_statistic_model(words):
-    # this simply returns all unique chars
-    chars = sorted(list(set("".join(words))))
-    # this is a map of char to index to a is 1 z is 26 basically
-    stoi = {s: i + 1 for i, s in enumerate(chars)}
-    # this is special token for start and end sequence
-    stoi["."] = 0
-    itos = {i: s for s, i in stoi.items()}
+def biagram_statistic_model(words, itos, stoi):
     # this is tensor, you can imagine this as 2 dimensional matrix
     # rows and columns are chars indexes so for example 0 - '.' 1 - 'a',..., 27 - 'z'
     # value at [0,0] means how many times '.' was followed by '.'
@@ -57,9 +60,7 @@ def biagram_statistic_model(words):
     # [27,27] means how many times 'z' was followed by 'z' etc.
     N = torch.zeros((27, 27), dtype=torch.int32)
     for w in words:
-        chs = ["."] + list(w) + ["."]
-        # well this is just rust window of 2: emma -> em, mm, ma
-        for ch1, ch2 in zip(chs, chs[1:]):
+        for ch1, ch2 in as_word_window(w):
             ix1 = stoi[ch1]
             ix2 = stoi[ch2]
             N[ix1, ix2] += 1
@@ -92,7 +93,36 @@ def biagram_statistic_model(words):
     measure_learning_efficiency(words, P, stoi)
 
 
+def create_traning_set(words, stoi) -> Tuple[torch.Tensor, torch.Tensor]:
+    xs, ys = [], []
+    for w in words:
+        for ch1, ch2 in as_word_window(w):
+            ix1 = stoi[ch1]
+            ix2 = stoi[ch2]
+            xs.append(ix1)
+            ys.append(ix2)
+    xs = torch.tensor(xs)
+    ys = torch.tensor(ys)
+    # NN expects float vales not integers
+    # What this function does?
+    # it takes xs [5, 13, 13, 1, 0] ("emma.") and converts it to vector 5x27 where (5 chars in xs and 27 total chars)
+    # v[0][0] = 1, v[1][5] = 1, v[2][13] = 1, v[3][13] = 1, v[4][1] = 1 and all other values are 0
+    # we have 27 chars so we need 27 values
+    torch.nn.functional.one_hot(xs, num_classes=27).float()
+    return xs, ys
+
+
+def biagram_natural_network_model(words, itos, stoi):
+    create_traning_set(words, stoi)
+
+
 if __name__ == "__main__":
     words = open("names.txt").read().splitlines()
-    shortest = min(len(w) for w in words)
-    biagram_statistic_model(words)
+    # this simply returns all unique chars
+    chars = sorted(list(set("".join(words))))
+    # this is a map of char to index to a is 1 z is 26 basically
+    stoi = {s: i + 1 for i, s in enumerate(chars)}
+    stoi[SEQUENCE_TOKEN] = 0
+    itos = {i: s for s, i in stoi.items()}
+    # biagram_statistic_model(words, itos, stoi)
+    biagram_natural_network_model(words, itos, stoi)
