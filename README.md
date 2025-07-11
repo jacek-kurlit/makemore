@@ -1,1 +1,4 @@
-You need to call source bin/active so env with dependencies is loaded
+# In order to run it
+
+- `python3 -m venv .`
+- `source bin/active`
